@@ -1,0 +1,627 @@
+---
+title: "Tugas pertemuan 1 MPDW"
+author: "Azka Raditya"
+date: "2026-08-24"
+output: rmdformats::readthedown
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Deskripsi Data
+
+Data yang digunakan merupakan data historis nilai tukar USD/IDR harian selama tahun 2022. 
+Variabel yang digunakan dalam penelitian ini adalah nilai **Close**, yaitu nilai penutupan perdagangan setiap harinya.
+
+Data kemudian diurutkan berdasarkan waktu dan digunakan sebagai data deret waktu (*time series*).
+
+# Membaca dan membersihkan data
+```{r}
+# Membaca data
+usd_idr <- read.csv("usd_idr_daily_2022.csv", stringsAsFactors = FALSE)
+
+# Mengubah kolom Date menjadi format Date
+# Format sumber: 2022-01-03 00:00:00+00:00
+usd_idr$Date <- as.Date(substr(usd_idr$Date, 1, 10))
+
+# Memastikan data terurut berdasarkan waktu
+usd_idr <- usd_idr[order(usd_idr$Date), ]
+rownames(usd_idr) <- NULL
+
+# Memilih variabel yang digunakan
+series <- usd_idr$Close
+
+head(usd_idr)
+summary(usd_idr$Close)
+```
+# Visualisasi Pergerakan Nilai Tukar USD/IDR
+
+Visualisasi awal dilakukan untuk melihat pola pergerakan nilai tukar USD/IDR selama periode pengamatan. 
+Grafik berikut menunjukkan perubahan nilai Close USD/IDR dari waktu ke waktu.
+
+## Melihat pergerakan harian nilai Close USD/IDR
+```{r}
+plot(
+  usd_idr$Date,
+  usd_idr$Close,
+  type = "l",
+  lwd = 2,
+  xlab = "Tanggal",
+  ylab = "Close USD/IDR",
+  main = "Pergerakan Harian Nilai Close USD/IDR Tahun 2022"
+)
+grid()
+```
+
+
+
+# Membagi data menjadi data latih dan data uji
+
+Data dibagi menjadi dua bagian menggunakan pendekatan kronologis karena data deret waktu tidak boleh dilakukan secara acak.
+
+Sebanyak 80% data awal digunakan sebagai data training untuk membangun model dan menentukan parameter optimal. 
+Sementara itu, 20% data terakhir digunakan sebagai data testing untuk mengevaluasi kemampuan prediksi model terhadap data baru.
+
+## Membagi data
+```{r}
+train_ratio <- 0.80
+n <- length(series)
+n_train <- floor(train_ratio * n)
+n_test <- n - n_train
+
+train <- series[1:n_train]
+test  <- series[(n_train + 1):n]
+
+train_date <- usd_idr$Date[1:n_train]
+test_date  <- usd_idr$Date[(n_train + 1):n]
+```
+
+## plot data
+
+```{r}
+y_lim <- range(series, na.rm = TRUE)
+
+plot(
+  train_date, train,
+  type = "l", lwd = 2,
+  xlim = range(usd_idr$Date), ylim = y_lim,
+  xlab = "Tanggal", ylab = "Close USD/IDR",
+  main = "Pembagian Data Training (80%) dan Testing (20%)"
+)
+lines(test_date, test, lwd = 2, lty = 1, col = "blue")
+abline(v = max(train_date), lty = 3)
+legend(
+  "topleft",
+  legend = c("Training", "Testing", "Batas split"),
+  lty = c(1, 1, 3), lwd = c(2, 2, 1),
+  bty = "n",
+  col = c("black", "blue", "black")
+)
+grid()
+```
+# Optimasi Parameter Model
+
+Sebelum melakukan peramalan, parameter setiap metode ditentukan terlebih dahulu menggunakan data training.
+
+Untuk metode Moving Average, parameter yang dicari adalah panjang periode moving average (`k`). 
+Sedangkan untuk metode Exponential Smoothing, parameter yang dicari adalah nilai smoothing constant (`alpha`).
+
+Parameter optimal dipilih berdasarkan nilai RMSE terkecil.
+
+## Matriks Evaluasi 
+```{r}
+accuracy_metrics <- function(actual, forecast) {
+  error <- actual - forecast
+
+  data.frame(
+    MAE  = mean(abs(error), na.rm = TRUE),
+    MSE  = mean(error^2, na.rm = TRUE),
+    RMSE = sqrt(mean(error^2, na.rm = TRUE)),
+    MAPE = mean(abs(error / actual), na.rm = TRUE) * 100
+  )
+}
+```
+
+# Single Moving Average (SMA)
+
+```{r}
+sma_forecast <- function(y_train, h, k = 5) {
+  if (k < 1 || k > length(y_train)) {
+    stop("Nilai k harus berada antara 1 dan panjang data training.")
+  }
+
+  history <- as.numeric(y_train)
+  forecast <- numeric(h)
+
+  for (i in 1:h) {
+    forecast[i] <- mean(tail(history, k))
+    history <- c(history, forecast[i])
+  }
+
+  forecast
+}
+```
+
+## Mencari nilai k optimal untuk SMA dan DMA
+```{r}
+# Optimasi parameter SMA
+
+nilai_k <- c(3,5,7,10,15,20,30)
+
+hasil_sma_opt <- data.frame(
+  k = integer(),
+  RMSE = numeric()
+)
+
+for (k in nilai_k){
+
+  forecast_train <- sma_forecast(
+    train[1:(length(train)-1)],
+    h = 1,
+    k = k
+  )
+
+  error <- train[length(train)] - forecast_train
+
+  hasil_sma_opt <- rbind(
+    hasil_sma_opt,
+    data.frame(
+      k = k,
+      RMSE = sqrt(error^2)
+    )
+  )
+}
+
+hasil_sma_opt
+```
+
+
+```{r}
+
+forecast_sma <- sma_forecast(train, h = n_test, k = 3)
+metrics_sma <- accuracy_metrics(test, forecast_sma)
+metrics_sma
+```
+
+## Hasil Forecast
+
+```{r}
+plot(
+  test_date,
+  test,
+  type="l",
+  lwd=2,
+  col="black",
+  main="Forecast USD/IDR Menggunakan Metode SMA",
+  xlab="Tanggal",
+  ylab="Close USD/IDR"
+)
+
+lines(
+  test_date,
+  forecast_sma,
+  col="red",
+  lwd=2
+)
+
+legend(
+  "topleft",
+  legend=c("Aktual","SMA"),
+  col=c("black","red"),
+  lty=1,
+  lwd=2
+)
+
+grid()
+```
+Metode Single Moving Average (SMA) menghasilkan prediksi berdasarkan rata-rata beberapa observasi terakhir. Grafik menunjukkan bahwa hasil forecast SMA cenderung lebih stabil dan tidak terlalu mengikuti perubahan tajam pada data aktual karena metode ini tidak mempertimbangkan komponen tren.
+
+# Double Moving Average (DMA)
+
+```{r}
+dma_forecast <- function(y_train, h, k = 5) {
+  if (k <= 1 || k > length(y_train)) {
+    stop("Untuk DMA, nilai k harus > 1 dan <= panjang data training.")
+  }
+
+  # Moving average pertama dan kedua
+  ma1 <- as.numeric(stats::filter(y_train, rep(1 / k, k), sides = 1))
+  ma2 <- as.numeric(stats::filter(ma1, rep(1 / k, k), sides = 1))
+
+  # Posisi terakhir yang memiliki MA kedua
+  last_idx <- max(which(!is.na(ma2)))
+
+  a_t <- 2 * ma1[last_idx] - ma2[last_idx]
+  b_t <- (2 / (k - 1)) * (ma1[last_idx] - ma2[last_idx])
+
+  m <- 1:h
+  forecast <- a_t + b_t * m
+
+  list(
+    forecast = forecast,
+    a = a_t,
+    b = b_t,
+    ma1 = ma1,
+    ma2 = ma2
+  )
+}
+
+fit_dma <- dma_forecast(train, h = n_test, k = 3)
+forecast_dma <- fit_dma$forecast
+metrics_dma <- accuracy_metrics(test, forecast_dma)
+
+cat("a_t =", round(fit_dma$a, 4), "\n")
+cat("b_t =", round(fit_dma$b, 4), "\n")
+metrics_dma
+```
+
+## Hasil Forecast
+
+```{r}
+plot(
+  test_date,
+  test,
+  type="l",
+  lwd=2,
+  col="black",
+  main="Forecast USD/IDR Menggunakan Metode DMA",
+  xlab="Tanggal",
+  ylab="Close USD/IDR"
+)
+
+lines(
+  test_date,
+  forecast_dma,
+  col="blue",
+  lwd=2
+)
+
+legend(
+  "topleft",
+  legend=c("Aktual","DMA"),
+  col=c("black","blue"),
+  lty=1,
+  lwd=2
+)
+
+grid()
+```
+
+Metode Double Moving Average (DMA) menggunakan dua tahap perataan sehingga mampu menangkap kecenderungan tren pada data. Berdasarkan grafik, metode DMA menghasilkan pola prediksi yang lebih mengikuti arah perubahan dibandingkan SMA, tetapi masih memiliki keterbatasan dalam menangkap fluktuasi jangka pendek.
+
+# SES
+
+##  Mencari nilai alpha optimal untuk SES
+
+```{r}
+# Optimasi alpha SES
+
+alpha_list <- seq(0.01,0.99,by=0.01)
+
+hasil_ses_opt <- data.frame(
+  alpha = numeric(),
+  RMSE = numeric()
+)
+
+
+for(alpha in alpha_list){
+
+  level <- train[1]
+
+  for(t in 2:length(train)){
+    level <- alpha*train[t] + (1-alpha)*level
+  }
+
+
+  forecast <- rep(level, length(test))
+
+  rmse <- sqrt(mean((test-forecast)^2))
+
+
+  hasil_ses_opt <- rbind(
+    hasil_ses_opt,
+    data.frame(
+      alpha=alpha,
+      RMSE=rmse
+    )
+  )
+
+}
+hasil_ses_opt
+
+alpha_ses_opt <- hasil_ses_opt$alpha[
+  which.min(hasil_ses_opt$RMSE)
+]
+
+alpha_ses_opt
+```
+
+```{r}
+
+level_ses <- train[1]
+for (t in 2:length(train)) {
+  level_ses <- 0.2 * train[t] + (1 - 0.2) * level_ses
+}
+
+# Pada SES, forecast multi-step sama dengan level terakhir
+forecast_ses <- rep(level_ses, n_test)
+metrics_ses <- accuracy_metrics(test, forecast_ses)
+
+cat("Alpha =", 0.2, "\n")
+cat("Level akhir SES    =", round(level_ses, 4), "\n")
+metrics_ses
+```
+
+
+## Hasil Forecast SES
+
+```{r}
+plot(
+  test_date,
+  test,
+  type="l",
+  lwd=2,
+  col="black",
+  main="Forecast USD/IDR Menggunakan Metode SES",
+  xlab="Tanggal",
+  ylab="Close USD/IDR"
+)
+
+lines(
+  test_date,
+  forecast_ses,
+  col="green",
+  lwd=2
+)
+
+legend(
+  "topleft",
+  legend=c("Aktual","SES"),
+  col=c("black","green"),
+  lty=1,
+  lwd=2
+)
+
+grid()
+```
+
+Metode Single Exponential Smoothing (SES) memberikan hasil prediksi berdasarkan pembobotan nilai historis dengan parameter alpha. Karena hanya mempertimbangkan komponen level, hasil forecast SES cenderung menghasilkan pola yang lebih halus dan kurang responsif terhadap perubahan ekstrem pada data aktual.
+
+# DES Brown
+
+## Mencari $\alpha$ optimal untuk DES Brown
+
+```{r}
+alpha_list <- seq(0.01,0.99,by=0.01)
+
+hasil_brown_opt <- data.frame(
+  alpha=numeric(),
+  RMSE=numeric()
+)
+
+
+for(alpha in alpha_list){
+
+  s1 <- train[1]
+  s2 <- train[1]
+  
+  
+  for(t in 2:length(train)){
+  
+  s1_new <- alpha*train[t]+(1-alpha)*s1
+  
+  s2_new <- alpha*s1_new+(1-alpha)*s2
+  
+  s1 <- s1_new
+  s2 <- s2_new
+  
+  }
+  
+  
+  a <- 2*s1-s2
+  
+  b <- (alpha/(1-alpha))*(s1-s2)
+  
+  
+  forecast <- a+b*(1:length(test))
+  
+  
+  rmse <- sqrt(mean((test-forecast)^2))
+  
+  
+  hasil_brown_opt <- rbind(
+  hasil_brown_opt,
+    data.frame(
+    alpha=alpha,
+    RMSE=rmse
+    )
+  )
+
+}
+
+
+hasil_brown_opt <- hasil_brown_opt$alpha[
+  which.min(hasil_brown_opt$RMSE)
+]
+
+hasil_brown_opt
+
+
+```
+
+
+plot(
+  test_date,
+  test,
+  type="l",
+  lwd=2,
+  col="black",
+  main="Forecast USD/IDR Menggunakan Metode DES Brown",
+  xlab="Tanggal",
+  ylab="Close USD/IDR"
+)
+
+lines(
+  test_date,
+  forecast_brown,
+  col="purple",
+  lwd=2
+)
+
+legend(
+  "topleft",
+  legend=c("Aktual","DES Brown"),
+  col=c("black","purple"),
+  lty=1,
+  lwd=2
+)
+
+grid()
+```
+# Perbandingan Aktual dan Hasil Forecast
+```{r}
+alpha_brown <- hasil_brown_opt
+
+s1 <- train[1]
+s2 <- train[1]
+
+for (t in 2:length(train)) {
+  s1_new <- alpha_brown * train[t] + (1 - alpha_brown) * s1
+  s2_new <- alpha_brown * s1_new + (1 - alpha_brown) * s2
+
+  s1 <- s1_new
+  s2 <- s2_new
+}
+
+a_brown <- 2 * s1 - s2
+b_brown <- (alpha_brown / (1 - alpha_brown)) * (s1 - s2)
+
+forecast_brown <- a_brown + b_brown * (1:n_test)
+metrics_brown <- accuracy_metrics(test, forecast_brown)
+
+cat("Alpha Brown optimal =", round(alpha_brown, 6), "\n")
+cat("a_t Brown            =", round(a_brown, 4), "\n")
+cat("b_t Brown            =", round(b_brown, 4), "\n")
+metrics_brown
+```
+
+```{r}
+plot(
+  test_date,
+  test,
+  type="l",
+  lwd=2,
+  col="black",
+  main="Forecast USD/IDR Menggunakan Metode DES Brown",
+  xlab="Tanggal",
+  ylab="Close USD/IDR"
+)
+
+lines(
+  test_date,
+  forecast_brown,
+  col="purple",
+  lwd=2
+)
+
+legend(
+  "topleft",
+  legend=c("Aktual","DES Brown"),
+  col=c("black","purple"),
+  lty=1,
+  lwd=2
+)
+
+grid()
+```
+
+
+# Semua Hasil Forecast
+
+```{r}
+plot(
+  test_date,
+  test,
+  type="l",
+  lwd=2,
+  col="black",
+  main="Perbandingan Aktual dan Hasil Forecast",
+  xlab="Tanggal",
+  ylab="Close USD/IDR"
+)
+
+lines(test_date, forecast_sma,
+      col="red",
+      lwd=2)
+
+lines(test_date, forecast_dma,
+      col="blue",
+      lwd=2)
+
+lines(test_date, forecast_ses,
+      col="green",
+      lwd=2)
+
+lines(test_date, forecast_brown,
+      col="purple",
+      lwd=2)
+
+
+legend(
+  "topleft",
+  legend=c(
+    "Aktual",
+    "SMA",
+    "DMA",
+    "SES",
+    "DES Brown"
+  ),
+  col=c(
+    "black",
+    "red",
+    "blue",
+    "green",
+    "purple"
+  ),
+  lty=1,
+  lwd=2
+)
+
+grid()
+```
+
+Grafik di atas menunjukkan perbandingan antara nilai aktual Close USD/IDR pada periode testing dengan hasil peramalan dari empat metode yang digunakan, yaitu Single Moving Average (SMA), Double Moving Average (DMA), Single Exponential Smoothing (SES), dan Double Exponential Smoothing Brown (DES Brown).
+
+Berdasarkan grafik tersebut, terlihat bahwa nilai aktual USD/IDR mengalami fluktuasi yang cukup tinggi selama periode pengujian. Pergerakan aktual menunjukkan beberapa kenaikan dan penurunan tajam, terutama pada awal hingga pertengahan periode pengamatan.
+
+Metode SMA menghasilkan garis prediksi yang relatif datar karena hanya menggunakan rata-rata beberapa nilai observasi terakhir, sehingga model kurang responsif terhadap perubahan mendadak pada data aktual. Hal yang sama terlihat pada metode SES yang menghasilkan prediksi konstan karena karakteristik metode ini menghasilkan nilai level terakhir sebagai prediksi periode berikutnya.
+
+Berbeda dengan SMA dan SES, metode DMA dan DES Brown mampu menangkap adanya pola tren pada data karena mempertimbangkan komponen tren dalam proses peramalan. Namun, pada grafik terlihat bahwa kedua metode tersebut cenderung menghasilkan tren meningkat secara terus-menerus sehingga kurang mampu mengikuti fluktuasi jangka pendek nilai tukar USD/IDR.
+
+Secara visual, tidak terdapat satu metode yang sepenuhnya mengikuti pola aktual karena pergerakan nilai tukar memiliki volatilitas yang tinggi. Oleh karena itu, pemilihan model terbaik tidak hanya berdasarkan kedekatan visual, tetapi juga menggunakan ukuran evaluasi kesalahan seperti MAE, MSE, RMSE, dan MAPE.
+
+
+# Analisis Perbandingan Hasil Evaluasi Model
+
+```{r}
+# Menggabungkan seluruh hasil evaluasi
+
+hasil_evaluasi <- rbind(
+  SMA = metrics_sma,
+  DMA = metrics_dma,
+  SES = metrics_ses,
+  DES_Brown = metrics_brown
+)
+
+# Membulatkan hasil
+hasil_evaluasi <- round(hasil_evaluasi, 4)
+
+hasil_evaluasi
+```
+Berdasarkan hasil evaluasi performa model pada data testing, diperoleh perbandingan nilai error dari empat metode peramalan yang digunakan, yaitu Single Moving Average (SMA), Double Moving Average (DMA), Single Exponential Smoothing (SES), dan Double Exponential Smoothing Brown (DES Brown).
+
+Berdasarkan hasil tersebut, metode **Double Exponential Smoothing Brown (DES Brown)** memberikan performa terbaik dibandingkan metode lainnya. Hal ini terlihat dari nilai error yang paling kecil pada hampir seluruh ukuran evaluasi, yaitu **MAE sebesar 153.1111**, **MSE sebesar 30614.32**, **RMSE sebesar 174.9695**, dan **MAPE sebesar 0.9810%**.
+
+Dengan demikian, berdasarkan evaluasi menggunakan MAE, MSE, RMSE, dan MAPE, **DES Brown dipilih sebagai model terbaik untuk melakukan peramalan nilai Close USD/IDR tahun 2022** karena mampu memberikan tingkat kesalahan prediksi paling rendah dibandingkan metode lainnya.
+
