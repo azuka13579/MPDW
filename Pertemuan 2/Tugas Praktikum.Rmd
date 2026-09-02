@@ -1,0 +1,179 @@
+---
+title: "Tugas MPDW 2"
+author: "Azka Raditya Hafidz"
+date: "2026-08-27"
+output: rmdformats::readthedown
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Install library jika belum terpasang:
+# install.packages(c("lmtest", "orcutt"))
+
+library(lmtest)     # Untuk uji Durbin-Watson (dwtest)
+library(orcutt)     # Untuk penanganan autokorelasi (cochrane.orcutt)
+```
+
+
+# Nomor 1
+
+## Input Data
+```{r}
+# Input Data Praktikum
+data_praktikum <- data.frame(
+  Period = 1:20,
+  Market_Share = c(3.63, 4.20, 3.33, 4.54, 2.89, 4.87, 4.90, 5.29, 6.18, 7.20,
+                   7.25, 6.09, 6.80, 8.65, 8.43, 8.29, 7.18, 7.90, 8.45, 8.23),
+  Price = c(0.97, 0.95, 0.99, 0.91, 0.98, 0.90, 0.89, 0.86, 0.85, 0.82,
+            0.79, 0.83, 0.81, 0.77, 0.76, 0.80, 0.83, 0.79, 0.76, 0.78)
+)
+
+head(data_praktikum)
+```
+
+## Pemodelan Regresi Linier OLS
+```{r}
+# Pemodelan Regresi Linier OLS
+model_ols <- lm(Market_Share ~ Price, data = data_praktikum)
+summary(model_ols)
+```
+
+## Pemeriksaan Autokorelasi
+
+### Plot Sisaan dan ACF
+```{r}
+# Mengambil sisaan model
+sisaan_ols <- residuals(model_ols)
+
+# 1. Plot Sisaan vs Waktu (Period)
+plot(data_praktikum$Period, sisaan_ols, type = "b", pch = 19, col = "blue",
+     xlab = "Period (t)", ylab = "Sisaan (e_t)",
+     main = "Plot Sisaan vs Urutan Waktu")
+abline(h = 0, lty = 2, col = "red")
+
+# 2. Plot ACF (Autocorrelation Function)
+acf(sisaan_ols, main = "ACF Sisaan Model OLS")
+```
+
+### Uji Durbin-Watson
+```{r}
+# Uji Durbin-Watson awal
+dw_ols <- dwtest(model_ols)
+dw_ols
+```
+Berdasarkan hasil uji Durbin-Watson, nilai statistik DW adalah 1.1358 dan p-value < 0.05, yang menunjukkan adanya autokorelasi positif pada sisaan model OLS.
+
+## Penanganan Autokorelasi dengan Cochrane-Orcutt
+```{r}
+# Menjalankan prosedur Cochrane-Orcutt
+model_co <- cochrane.orcutt(model_ols)
+
+# Menampilkan hasil estimasi parameter model baru
+summary(model_co)
+```
+```{r}
+# Menampilkan nilai statistik DW dan p-value sebelum & sesudah penanganan
+model_co$DW
+```
+
+## Perbandingan Hasil Uji Durbin-Watson Sebelum dan Sesudah Penanganan
+```{r}
+# Tabel perbandingan sebelum dan sesudah penanganan
+perbandingan <- data.frame(
+  Model = c("Model OLS Awal", "Model Cochrane-Orcutt"),
+  DW_Statistik = c(dw_ols$statistic, model_co$DW[3]),
+  p_value = c(dw_ols$p.value, model_co$DW[4])
+)
+knitr::kable(perbandingan, col.names = c("Model", "DW-Statistic", "p-value"),
+             caption = "Perbandingan Hasil Uji Durbin-Watson")
+```
+
+Penanganan dengan metode Cochrane-Orcutt berhasil mengurangi autokorelasi pada sisaan model, yang ditunjukkan oleh peningkatan nilai statistik DW dan p-value yang lebih besar dari 0.05 setelah penanganan.
+
+# Nomor 2
+
+## Input Data
+```{r}
+# Input Data
+data_praktikum2 <- data.frame(
+  Year = 1975:2014,
+  Sales = c(
+    11.7, 12.0, 12.3, 12.8, 13.1, 13.6, 13.9, 14.4, 14.7, 15.3,
+    15.5, 15.8, 16.1, 16.6, 16.9, 16.7, 16.9, 17.4, 17.6, 17.9,
+    18.0, 17.9, 18.0, 18.2, 18.2, 18.3, 18.6, 19.2, 19.3, 19.5,
+    19.2, 19.3, 19.5, 20.0, 20.0, 19.9, 19.8, 19.9, 20.2, 21.0
+  ),
+  Advertising = c(
+    9.4,  9.6,  10.0, 10.4, 10.8, 10.9, 11.7, 12.2, 12.5, 12.9,
+    13.0, 13.2, 13.8, 14.2, 14.6, 14.4, 15.0, 15.4, 15.7, 15.9,
+    15.9, 16.0, 16.3, 16.2, 16.8, 17.3, 17.6, 18.1, 18.3, 18.5,
+    18.7, 18.9, 19.2, 20.0, 20.0, 20.3, 20.4, 21.0, 21.5, 22.1
+  )
+)
+
+# Menampilkan 6 amatan pertama dan terakhir
+head(data_praktikum2)
+```
+
+## Model OLS
+```{r}
+# Membentuk model OLS
+model_ols <- lm(Sales ~ Advertising, data = data_praktikum2)
+summary(model_ols)
+```
+## Pemeriksaan Autokorelasi
+
+### Plot Sisaan dan ACF
+```{r}
+# Ekstraksi sisaan
+sisaan <- residuals(model_ols)
+
+# 1. Plot Sisaan vs Waktu (Year)
+plot(data_praktikum2$Year, sisaan, type = "b", pch = 19, col = "darkblue",
+     xlab = "Tahun (Year)", ylab = "Sisaan (e_t)",
+     main = "Plot Sisaan vs Tahun")
+abline(h = 0, lty = 2, col = "red")
+
+# 2. Plot ACF Sisaan
+acf(sisaan, main = "ACF Sisaan Model OLS")
+```
+### Uji Durbin-Watson
+
+```{r}
+# Uji Durbin-Watson untuk autokorelasi ordo 1
+dw_result <- dwtest(model_ols)
+dw_result
+```
+Berdasarkan hasil uji Durbin-Watson, nilai statistik DW adalah 0.16204 dan p-value < 0.05, yang menunjukkan adanya autokorelasi positif pada sisaan model OLS.
+
+## Penanganan Dengan Cochrane-Orcutt
+
+```{r}
+# Menjalankan Cochrane-Orcutt
+model_co <- cochrane.orcutt(model_ols)
+
+# Ringkasan model setelah penanganan
+summary(model_co)
+```
+```{r}
+# Menampilkan nilai DW sebelum dan sesudah penanganan
+model_co$DW
+model_co$DW[4]  # DW setelah penanganan
+```
+## Perbandingan Sebelum dan Sesudah Penanganan
+```{r}
+# Membuat tabel perbandingan nilai uji DW
+tabel_evaluasi <- data.frame(
+  Model = c("OLS Awal", "Setelah Cochrane-Orcutt"),
+  DW_Statistik = c(dw_result$statistic, model_co$DW[3]),
+  p_value = c(dw_result$p.value, model_co$DW[4])
+)
+
+knitr::kable(tabel_evaluasi, col.names = c("Model", "DW Statistic", "p-value"),
+             caption = "Evaluasi Autokorelasi Sebelum dan Sesudah Cochrane-Orcutt")
+```
+
+Penanganan dengan metode Cochrane-Orcutt berhasil mengurangi autokorelasi pada sisaan model, yang ditunjukkan oleh peningkatan nilai statistik DW dan p-value yang lebih besar dari 0.05 setelah penanganan.
