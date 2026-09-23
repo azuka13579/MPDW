@@ -1,0 +1,260 @@
+---
+title: "Praktikum MPDW 5"
+author: "Azka Raditya"
+date: "2026-09-17"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# White Noise
+```{r}
+set.seed(1234)
+wn <- rnorm(300)
+ts.plot(wn)
+```
+
+# Proses Pembangkitan Data MA(2)
+
+Proses MA dapat dituliskan sebagai berikut:
+
+$$
+y_{t} = c + e_t + \theta_{1}e_{t-1} + \theta_{2}e_{t-2} + \dots + \theta_{q}e_{t-q} = c+{e_t+\sum_{i=1}^p \theta_ie_{t-i}}
+$$
+
+## Pembangkitan Proses MA(2)
+
+Di sini akan dicoba membangkitkan proses MA(2) dengan $\theta_1 = 0.4$ dan $\theta_2 = 0.6$  sebanyak 300 observasi dan $c=0$. Karena diperlukan satu nilai awal untuk $e_{t-1}$, masukkan nilai pertama white noise sebagai nilai awal tersebut.
+
+```{r}
+set.seed(1234)
+n <- 300
+ma <- numeric(n)
+ma[1] <- wn[1]
+ma[2] <- wn[2] + 0.4 * wn[1]
+```
+
+Nilai-nilai selanjutnya dapat dicari melalui *loop*. Bentuk loop dapat dilihat dari rumus MA(1) yang hendak dibangkitkan:
+
+$$
+y_t = e_t+0.4e_{t-1} + 0.6e_{t-2}
+$$
+
+```{r}
+for(i in 3:300){
+   ma[i] <- wn[i] + 0.4 * wn[i - 1] + 0.6 * wn[i-2] 
+}
+
+ts.plot(ma, main = "Simulasi Proses MA(2)", ylab = expression(y[t]))
+```
+
+Selain menggunakan cara di atas, pembangkitan proses MA(2) dapat dilakukan dengan fungsi `arima.sim()` sebagai berikut.
+
+```{r}
+# Membangkitkan data MA(2) dengan theta1 = 0.4 dan theta2 = 0.6 sebanyak 300 data
+ma2 <- arima.sim(list(order = c(0, 0, 2), ma = c(0.4, 0.6)), n = 300)
+
+ts.plot(ma2, main = "Simulasi Proses MA(2)", ylab = expression(y[t]))
+```
+
+## Karakteristik MA(2)
+
+### Plot Time Series
+
+```{r}
+ts.plot(ma)
+```
+### Plot ACF, PACF, EACF
+
+```{r}
+acf(ma, lag.max = 20, main = "ACF MA(2)")
+pacf(ma, lag.max = 20, main = "PACF MA(2)")
+TSA::eacf(ma)
+```
+
+
+### Plot Autokorelasi
+```{r}
+# Data Lag
+yt     <- ma[4:n]
+yt_1   <- ma[3:(n - 1)]
+yt_2   <- ma[2:(n - 2)]
+yt_3   <- ma[1:(n - 3)]
+
+par(mfrow = c(1, 3))
+plot(yt_1, yt, main = "Yt vs Yt-1", xlab = expression(Y[t-1]), ylab = expression(Y[t]))
+plot(yt_2, yt, main = "Yt vs Yt-2", xlab = expression(Y[t-2]), ylab = expression(Y[t]))
+plot(yt_3, yt, main = "Yt vs Yt-3", xlab = expression(Y[t-3]), ylab = expression(Y[t]))
+par(mfrow = c(1, 1))
+
+# Perbandingan Autokorelasi
+rho_teori_ma <- c((0.4 + 0.4 * 0.6) / (1 + 0.4^2 + 0.6^2),
+                  0.6 / (1 + 0.4^2 + 0.6^2),
+                  0)
+rho_sim_ma <- c(cor(yt, yt_1), cor(yt, yt_2), cor(yt, yt_3))
+
+data.frame(Lag = 1:3, Teoritis = round(rho_teori_ma, 4), Sampel = round(rho_sim_ma, 4))
+```
+
+# Proses Pembangkitan Data AR(2)
+
+## Proses AR
+
+Proses AR dapat dituliskan sebagai berikut:
+
+$$ y_{t} = c + e_t + \phi_{1}Y_{t-1} + \phi_{2}Y_{t-2} + \dots + \phi_{q}Y_{t-q} = c+{e_t+\sum_{i=1}^p \phi_iY_{t-i}} $$ Terlihat bahwa $Y_t$ berperan penting dalam pembangkitan proses AR.
+
+## Pembangkitan Proses AR
+
+Akan dicoba membangkitkan proses AR, yaitu AR(2) dengan $\phi_1 = 0.5$ dan $\phi_2 = 0.2$ sebanyak 300 observasi dan $c=0$.
+
+```{r}
+set.seed(1234)
+```
+
+Nilai-nilai selanjutnya dapat dicari melalui *loop*. Bentuk loop dapat dilihat dari rumus AR(2) yang hendak dibangkitkan:
+
+$$ Y_t = e_t+0.5Y_{t-1}+ 0.2Y_{t-2}  $$
+
+```{r}
+n <- length(wn)
+ar <- numeric(n)
+
+ar[1] <- wn[1]
+ar[2] <- 0.5 * ar[1] + wn[2]
+
+for (i in 3:n) {
+  ar[i] <- 0.5 * ar[i - 1] + 0.2 * ar[i - 2] + wn[i]
+}
+ar
+ts.plot(ar, main = "Simulasi Proses AR(2)", ylab = expression(y[t]))
+```
+
+Selain menggunakan cara di atas, pembangkitan proses AR dapat dilakukan dengan fungsi `arima.sim()` sebagai berikut.
+
+```{r}
+set.seed(1234)
+ar2_sim <- arima.sim(list(order = c(2, 0, 0), ar = c(0.5, 0.2)), n = n)
+```
+
+## Karakteristik AR(2)
+
+### Plot Time Series
+
+```{r}
+ts.plot(ar)
+```
+
+Berdasarkan plot time series tersebut terlihat bahwa data cenderung stasioner pada rataan
+
+### Plot ACF
+
+```{r}
+acf(ar)
+```
+
+Berdasarkan plot ACF tersebut terlihat bahwa plot ACF cenderung *tails off* dan cenderung membentuk pola grafik sinus
+
+### Plot PACF
+
+```{r}
+pacf(ar)
+```
+
+Berdasarkan plot PACF tersebut, terlihat bahwa plot PACF *cuts off* pada lag pertama, sejalan dengan teori yang ada
+
+### Plot EACF
+
+```{r}
+TSA::eacf(ar)
+```
+
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga nol berada pada ordo AR(1) dan ordo MA(0)
+
+### Scatterplot dan Autokorelasi antar Lag
+
+```{r}
+yt_ar   <- ar[4:n]
+yt_1_ar <- ar[3:(n - 1)]
+yt_2_ar <- ar[2:(n - 2)]
+yt_3_ar <- ar[1:(n - 3)]
+
+par(mfrow = c(1, 3))
+plot(yt_1_ar, yt_ar, main = "Yt vs Yt-1", xlab = expression(Y[t-1]), ylab = expression(Y[t]))
+plot(yt_2_ar, yt_ar, main = "Yt vs Yt-2", xlab = expression(Y[t-2]), ylab = expression(Y[t]))
+plot(yt_3_ar, yt_ar, main = "Yt vs Yt-3", xlab = expression(Y[t-3]), ylab = expression(Y[t]))
+par(mfrow = c(1, 1))
+
+# Perbandingan Autokorelasi
+rho_teori_ar <- ARMAacf(ar = c(0.5, 0.2), lag.max = 3)[-1]
+rho_sim_ar <- c(cor(yt_ar, yt_1_ar), cor(yt_ar, yt_2_ar), cor(yt_ar, yt_3_ar))
+
+data.frame(Lag = 1:3, Teoritis = round(rho_teori_ar, 4), Sampel = round(rho_sim_ar, 4))
+```
+# Pembangkitan data ARMA (2,2)
+
+## Pembangkitan Data Manual
+
+```{r}
+arma22 <- numeric(n)
+arma22[1] <- wn[1]
+arma22[2] <- 0.5 * arma22[1] + wn[2] + 0.4 * wn[1]
+
+for (i in 3:n) {
+  arma22[i] <- 0.5 * arma22[i - 1] + 0.2 * arma22[i - 2] +
+                      wn[i] + 0.4 * wn[i - 1] + 0.6 * wn[i - 2]
+}
+```
+
+## Pembangkitan Data dengan Fungsi `arima.sim()`
+
+```{r}
+set.seed(1234)
+arma22_sim <- arima.sim(list(order = c(2, 0, 2), ar = c(0.5, 0.2), ma = c(0.4, 0.6)), n = n)
+```
+
+## Plot ACF, PACF, dan EACF
+```{r}
+acf(arma22, lag.max = 20, main = "ACF ARMA(2,2)")
+pacf(arma22, lag.max = 20, main = "PACF ARMA(2,2)")
+TSA::eacf(arma22)
+```
+
+##  Scatterplot dan Autokorelasi antar Lag
+```{r}
+yt_arma   <- arma22[4:n]
+yt_1_arma <- arma22[3:(n - 1)]
+yt_2_arma <- arma22[2:(n - 2)]
+yt_3_arma <- arma22[1:(n - 3)]
+
+par(mfrow = c(1, 3))
+plot(yt_1_arma, yt_arma, main = "Yt vs Yt-1", xlab = expression(Y[t-1]), ylab = expression(Y[t]))
+plot(yt_2_arma, yt_arma, main = "Yt vs Yt-2", xlab = expression(Y[t-2]), ylab = expression(Y[t]))
+plot(yt_3_arma, yt_arma, main = "Yt vs Yt-3", xlab = expression(Y[t-3]), ylab = expression(Y[t]))
+par(mfrow = c(1, 1))
+
+rho_teori_arma <- ARMAacf(ar = c(0.5, 0.2), ma = c(0.4, 0.6), lag.max = 10)
+
+rho_sampel_arma <- acf(arma22, lag.max = 10, plot = FALSE)$acf[,,1]
+
+perbandingan_acf <- data.frame(
+  Lag = 0:10,
+  ACF_Teori  = round(rho_teori_arma, 4),
+  ACF_Sampel = round(rho_sampel_arma, 4),
+  Selisih    = round(abs(rho_teori_arma - rho_sampel_arma), 4)
+)
+
+print(perbandingan_acf)
+
+par(mfrow = c(1, 2))
+acf(arma22, lag.max = 10, main = "ACF Sampel ARMA(2,2)")
+plot(0:10, rho_teori_arma, type = "h", lwd = 2, col = "blue",
+     xlab = "Lag", ylab = "ACF", main = "ACF Teoretis ARMA(2,2)",
+     ylim = c(min(rho_teori_arma, 0) - 0.1, 1))
+abline(h = 0, lty = 2)
+par(mfrow = c(1, 1))
+```
+
