@@ -1,0 +1,341 @@
+---
+title: "MPDW Praktikum 6"
+author: "Azka Raditya"
+date: "2026-09-30"
+output: rmdformats::readthedown
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Library
+```{r}
+library(forecast)
+library(tseries)
+library(ggplot2)
+library(Metrics)
+library(readxl)
+library(TSA)
+```
+
+# Persiapan Data
+## Membaca Data
+```{r}
+data <- read.csv2("usd_idr_daily_2022.csv", sep = ",")
+
+data$Date <- as.Date(data$Date)
+data$Close <- as.numeric(data$Close)
+data$Open <- as.numeric(data$Open)
+data$Low <- as.numeric(data$Low)
+data$High <- as.numeric(data$High)
+
+head(data)
+```
+Variabel yang digunakan adalah harga penutupan (Close) karena ingin melakukan peramalan nilai penutupan USD/IDR.
+
+## Membuat Data Time Series
+```{r}
+close_ts <- ts(
+  data$Close,
+  frequency = 1
+)
+
+plot(
+  close_ts,
+  main = "Pergerakan Close USD/IDR Tahun 2022",
+  ylab = "Close",
+  xlab = "Waktu"
+)
+```
+Grafik menunjukkan perubahan nilai Close USD/IDR dari waktu ke waktu. Terlihat bahwa data mengalami fluktuasi sehingga diperlukan model deret waktu untuk menangkap pola historis sebelum melakukan peramalan.
+
+## Pembagian Data Training dan Testing
+
+```{r}
+n <- length(close_ts)
+
+train_size <- floor(0.8*n)
+
+train <- window(
+  close_ts,
+  end = train_size
+)
+
+test <- window(
+  close_ts,
+  start = train_size + 1
+)
+
+length(train)
+length(test)
+```
+
+Data dibagi menjadi dua bagian, yaitu 80% data awal sebagai data training untuk membangun model ARIMA dan 20% data akhir sebagai data testing untuk mengevaluasi kemampuan prediksi model ARIMA.
+
+
+# Model ARIMA
+
+## Cek Stasioneritas
+
+```{r}
+acf(train)
+```
+Berdasarkan plot ACF, terlihat bahwa plot ACF data menurun secara perlahan (tails of slowly). Hal ini juga menjadi indikasi bahwa data tidak stasioner dalam rataan
+
+```{r}
+adf.test(train)
+```
+
+H0 : Data tidak stasioner dalam rataan
+H1 : Data stasioner dalam rataan
+
+Karena p-value > 0.05, maka data belum stasioner akan dilakukan diferrencing agar menjadi stasioner
+
+## Differencing
+
+```{r}
+diff_train <- diff(train)
+
+plot(
+  diff_train,
+  main="Differencing Data Close USD/IDR"
+)
+
+acf(diff_train)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot ACF cuts off pada lag ke 1. Hal ini menandakan data sudah stasioner dalam rataan dan ketidakstasioneran data telah berhasil tertangani.
+
+```{r}
+adf.test(diff_train)
+```
+H0 : Data tidak stasioner dalam rataan
+
+H1 : Data stasioner dalam rataan
+
+Karena p-value <  0.05, maka data sudah lebih stasioner
+
+Differencing dilakukan untuk menghilangkan pola tren sehingga rata-rata data menjadi lebih stabil. Setelah proses differencing, data menjadi lebih stasioner. Dapat dilihat pada plot tersebut
+
+
+## Menentukan Model ARIMA
+
+```{r}
+acf(diff_train)
+```
+
+Plot acf cut-off pada lag 1, maka q=1
+```{r}
+## EACF
+pacf(diff_train)
+```
+Plot pacf cut-off pada lag 1, maka p=1
+
+### EACF
+
+```{r}
+eacf(diff_train)
+```
+### Model ARIMA dengan auto.arima
+```{r}
+model_auto <- auto.arima(
+  train,
+  seasonal = FALSE,
+  stepwise = FALSE,
+  approximation = FALSE
+)
+
+model_auto
+```
+## Kandidat Model (Berdasarkan EACF Plot)
+
+- ARIMA (0,1,1)
+- ARIMA (1,1,1) -> Dari plot ACF dan PACF
+- ARIMA (0,1,2)
+- ARIMA (1,1,2)
+- ARIMA (2,1,2)
+
+## Pendugaan Parameter Model
+
+### ARIMA (0,1,1)
+```{r}
+model1.da=Arima(train, order=c(0,1,1),method="ML")
+summary(model1.da) #AIC=4752.56
+```
+```{r}
+lmtest::coeftest(model1.da)
+```
+### ARIMA (1,1,1)
+
+```{r}
+model2.da=Arima(train, order=c(1,1,1),method="ML")
+summary(model2.da) 
+```
+```{r}
+lmtest::coeftest(model2.da)
+```
+
+### ARIMA (0,1,2)
+
+```{r}
+model3.da=Arima(train, order=c(0,1,2),method="ML")
+summary(model3.da) 
+```
+```{r}
+lmtest::coeftest(model3.da)
+```
+### ARIMA (1,1,2)
+```{r}
+model4.da=Arima(train, order=c(1,1,2),method="ML")
+summary(model4.da) 
+```
+```{r}
+lmtest::coeftest(model4.da)
+```
+### ARIMA (2,1,2)
+```{r}
+model5.da=Arima(train, order=c(2,1,2),method="ML")
+summary(model5.da) 
+```
+```{r}
+lmtest::coeftest(model5.da)
+```
+
+## Ringkasan AIC
+
+```{r}
+model_tentatif <- data.frame(
+  Model = c("ARIMA(0,1,1)","ARIMA(1,1,1)","ARIMA(0,1,2)", "ARIMA(1,1,2)",
+            "ARIMA(2,1,2)"),
+  AIC   = c(AIC(model1.da),AIC(model2.da), AIC(model3.da), AIC(model4.da), AIC(model5.da)),
+  BIC   = c(BIC(model1.da),BIC(model2.da), BIC(model3.da), BIC(model4.da), BIC(model5.da))
+)
+
+model_tentatif
+```
+
+Dari tabel AIC tersebut, didapatkan bahwa model ARIMA(0,1,1) memberikan nilai AIC yang terkecil diantara kelima model sehingga model yang dipilih adalah model ARIMA(0,1,1)
+
+## Pembentukan Model
+```{r}
+model <- Arima(
+  train,
+  order = c(0,1,1)
+)
+
+summary(model)
+```
+
+## Analisis Sisaan
+
+```{r}
+# Sisaan Menyebar normal
+ks.test(model$residuals,"pnorm") 
+```
+H0 : Sisaan menyebar normal
+H1 : Sisaan tidak menyebar normal
+
+Berdasarkan uji KS tersebut, didapat p-value sebesar 0.00 < 0.05, maka tolak H0, sisaan pada model tidak menyebar secara normal
+ 
+```{r}
+# Sisaan Saling Bebas
+checkresiduals(model)
+```
+
+Berdasakan hasil uji Ljung-Box test
+
+H0 : Sisaan saling bebas
+H1 : Sisaan tidak tidak saling bebas
+
+Dapat dilihat bahwa p-value > 0.05 yang artinya gagal tolak H0, dapat diasumsikan sisaan saling bebas
+
+```{r}
+# sisaan homogen 
+Box.test((model$residuals)^2, type = "Ljung") 
+```
+Hipotesis yang digunakan untuk uji kehomogenan ragam adalah sebagai berikut.
+
+H0 : Ragam sisaan homogen
+H1 : Ragam sisaan tidak homogen
+
+Berdasarkan uji Ljung-Box terhadap sisaan kuadrat tersebut, didapat p-value sebesar 0.6097 > 0.05 yang menandakan ragam sisaan homogen.
+
+# Prediksi Model
+
+## Model Terbaik
+
+```{r}
+model <- Arima(
+  train,
+  order = c(0,1,1)
+)
+
+summary(model)
+
+```
+## Peramalan
+
+```{r}
+forecast_model <- forecast(
+  model,
+  h = length(test)
+)
+
+forecast_model
+```
+
+## Visualisasi Forecasting
+```{r}
+autoplot(forecast_model) +
+  autolayer(
+    test,
+    series="Actual"
+  ) +
+  labs(
+    title="Forecast Close USD/IDR Menggunakan ARIMA",
+    x="Waktu",
+    y="Close"
+  )
+```
+Berdasarkan grafik hasil peramalan menggunakan model ARIMA(0,1,1), terlihat bahwa model mampu mengikuti pola umum pergerakan harga Close USD/IDR pada periode training. Setelah periode training berakhir, model menghasilkan prediksi untuk periode testing yang ditunjukkan oleh garis forecast beserta interval kepercayaannya.
+
+Hasil prediksi menunjukkan bahwa nilai forecast cenderung mengikuti level terakhir dari data training, yaitu berada di sekitar nilai 15.400–15.600. Hal ini sesuai dengan karakteristik model ARIMA(0,1,1) yang menggunakan komponen Moving Average (MA) untuk menangkap pola perubahan data berdasarkan error masa lalu.
+
+Pada grafik terlihat bahwa nilai aktual pada periode testing mengalami fluktuasi di sekitar hasil prediksi. Beberapa nilai aktual berada di luar rentang prediksi, namun sebagian besar masih berada di dalam interval kepercayaan model. Hal ini menunjukkan bahwa model mampu memberikan estimasi pola pergerakan USD/IDR, meskipun belum sepenuhnya mampu menangkap seluruh variasi jangka pendek.
+
+## Metrik Evaluasi
+```{r}
+pred <- forecast_model$mean
+
+MAE <- mae(
+  test,
+  pred
+)
+
+RMSE <- rmse(
+  test,
+  pred
+)
+
+MAPE <- mape(
+  test,
+  pred
+)
+
+data.frame(
+  MAE,
+  RMSE,
+  MAPE
+)
+```
+Berdasarkan hasil evaluasi model ARIMA(0,1,1), diperoleh nilai Mean Absolute Error (MAE) sebesar 150.4174, yang menunjukkan bahwa rata-rata selisih absolut antara nilai aktual dan hasil peramalan adalah sekitar 150,42 poin kurs. Nilai Root Mean Square Error (RMSE) sebesar 168.102 menunjukkan besarnya tingkat kesalahan prediksi dengan memberikan penalti lebih besar terhadap kesalahan yang besar. Sementara itu, nilai Mean Absolute Percentage Error (MAPE) sebesar 0.009614271 atau sekitar 0.96% menunjukkan bahwa rata-rata kesalahan prediksi relatif terhadap nilai aktual berada di bawah 1%. Hal ini menunjukkan bahwa model ARIMA(0,1,1) mampu menghasilkan prediksi dengan tingkat kesalahan yang relatif kecil terhadap data aktual Close USD/IDR.
+
+## Kesimpulan
+
+Berdasarkan tahapan pemodelan deret waktu yang telah dilakukan dengan model ARIMA(0,1,1), data Close USD/IDR terlebih dahulu dibagi menjadi dua bagian, yaitu 80% data awal sebagai data training dan 20% data akhir sebagai data testing. Berdasarkan hasil identifikasi stasioneritas menggunakan uji Augmented Dickey-Fuller (ADF), data awal belum memenuhi asumsi stasioner sehingga dilakukan proses differencing satu kali. Setelah differencing, data telah memenuhi asumsi stasioner yang ditunjukkan oleh nilai p-value ADF yang lebih kecil dari taraf signifikansi 5%.
+
+Berdasarkan pola ACF, PACF, dan EACF, diperoleh beberapa kandidat model ARIMA yang kemudian dibandingkan berdasarkan nilai AIC dan BIC. Hasil perbandingan menunjukkan bahwa model ARIMA(0,1,1) memiliki nilai AIC terkecil sehingga dipilih sebagai model terbaik. Selanjutnya dilakukan analisis residual untuk memastikan kelayakan model. Berdasarkan uji Ljung-Box, residual model telah memenuhi asumsi independensi, serta berdasarkan uji Ljung-Box terhadap residual kuadrat menunjukkan bahwa residual memiliki ragam yang homogen.
+
+Model ARIMA(0,1,1) kemudian digunakan untuk melakukan peramalan terhadap periode testing. Hasil visualisasi menunjukkan bahwa model mampu mengikuti pola umum pergerakan Close USD/IDR, meskipun terdapat beberapa perbedaan antara nilai aktual dan hasil prediksi akibat adanya fluktuasi jangka pendek pada data kurs. Berdasarkan evaluasi performa, model menghasilkan nilai MAPE sebesar 0.96%, yang menunjukkan bahwa model memiliki tingkat kesalahan prediksi yang relatif kecil.
